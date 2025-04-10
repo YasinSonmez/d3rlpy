@@ -5,7 +5,6 @@ if __name__ == "__main__":
 
     dqn = d3rlpy.algos.DQNConfig().create()
 
-    team="rl-il"
     project ="bench-rlil"
     dqn.fit(
         dataset=dataset,

@@ -85,6 +85,11 @@ $ conda install conda-forge/noarch::d3rlpy
 $ docker run -it --gpus all --name d3rlpy takuseno/d3rlpy:latest bash
 ```
 
+### WanDB
+Login to WanDB in the cli using `wandb login`.
+To the training algorithm pipeline, add the keyword argument `logger_adapter=d3rlpy.logging.WanDBAdapterFactory(project="bench-rlil")`.
+To make sure that the logger uploads to the correct team, you must configure the team you'd like to use in your wandb profile using User Settings > Default Team > rl-il.
+
 ## Supported algorithms
 | algorithm | discrete control | continuous control |
 |:-|:-:|:-:|
