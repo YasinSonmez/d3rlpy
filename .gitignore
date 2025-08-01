@@ -23,3 +23,5 @@ dist
 *.egg-info
 /.vscode/
 wandb
+examples/rlil/videos
+examples/rlil/histograms
