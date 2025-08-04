@@ -17,19 +17,23 @@ def rollout_frames(env, episode, max_steps=1000):
 
     obs, info = env.reset()
 
-    qpos = np.zeros(env.model.nq)
+    qpos = np.zeros(env.unwrapped.model.nq)
     qpos[1:] = episode.observations[0, :5]
     qvel = episode.observations[0, 5:].copy()
-    env.set_state(qpos, qvel)
+    env.unwrapped.set_state(qpos, qvel)
 
     for i in range(n_steps - 1):
         # get the action from your policy
-        obs, _, _, _, info = env.step(episode.actions[i])
-        qpos = np.zeros(env.model.nq)
+        obs, reward, _, _, info = env.step(episode.actions[i])
+
+        print(reward - episode.rewards[i])
+
+        qpos = np.zeros(env.unwrapped.model.nq)
         qpos[1:] = episode.observations[i + 1, :5]
         qpos[0] = info["x_position"]
+        # print(info)
         qvel = episode.observations[i + 1, 5:]
-        env.set_state(qpos, qvel)
+        env.unwrapped.set_state(qpos, qvel)
 
         # render and store the RGB frame
         frame = env.render()
@@ -160,9 +164,7 @@ if __name__ == "__main__":
         video_dir,
         f"{mj_env_name}_grid.mp4",
     )
-    render_episodes_grid_video(
-        interval_episodes, env.unwrapped, grid_video_path
-    )
+    render_episodes_grid_video(interval_episodes, env, grid_video_path)
     # render_episode(
     #     episodes[0], env.unwrapped, os.path.join(video_dir, "hopper_test.mp4")
     # )
