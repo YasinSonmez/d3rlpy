@@ -2,7 +2,6 @@ import argparse
 import os
 from itertools import zip_longest
 
-import gymnasium as gym
 import imageio
 import numpy as np
 
@@ -14,23 +13,35 @@ os.environ["MUJOCO_GL"] = "egl"
 def rollout_frames(env, episode, max_steps=1000):
     """Run one rollout, return list of rgb frames."""
     frames = []
-    n_steps = min(len(episode.observations), max_steps)
+    n_steps = min(episode.actions.shape[0] - 1, max_steps)
 
-    obs = env.reset()
-    done = False
+    obs, info = env.reset()
 
-    for i in range(max_steps):
+    qpos = np.zeros(env.model.nq)
+    qpos[1:] = episode.observations[0, :5]
+    qvel = episode.observations[0, 5:]
+    env.set_state(qpos, qvel)
+
+    for i in range(n_steps):
         # get the action from your policy
-        obs, _, done, _, _ = env.step(episode.actions[i])
+        obs, _, _, _, _ = env.step(episode.actions[i])
 
         # render and store the RGB frame
         frame = env.render()
         frames.append(frame)
 
-        if done:
-            break
-
     return frames
+
+
+def render_episode(episode, env, output_path, fps=30, max_frames=None):
+    writer = imageio.get_writer(output_path, fps=fps)
+
+    frames = rollout_frames(env, episode)
+    for f in frames:
+        writer.append_data(f)
+
+    writer.close()
+    env.close()
 
 
 def render_episodes_grid_video(
@@ -47,7 +58,7 @@ def render_episodes_grid_video(
         for row_episodes in interval_episodes
     ]
 
-    nr = len(frames_grid)
+    len(frames_grid)
     nc = max(len(row) for row in frames_grid)
 
     # padding
@@ -71,7 +82,9 @@ def render_episodes_grid_video(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Visualize episodes by rewards")
+    parser = argparse.ArgumentParser(
+        description="Visualize episodes by rewards"
+    )
     parser.add_argument(
         "--env",
         type=str,
@@ -104,10 +117,12 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    dataset, env = d3rlpy.datasets.get_minari(args.env + "/" + args.expert_level)
-    env_name = args.env.split("/")[1]
+    dataset, env = d3rlpy.datasets.get_minari(
+        args.env + "/" + args.expert_level, render_mode="rgb_array"
+    )
+    # dataset, env = d3rlpy.datasets.get_d4rl("hopper-expert-v0")
     mj_env_name = env.unwrapped.spec.id
-    mj_env = gym.make(mj_env_name, render_mode="rgb_array")
+    # mj_env = gym.make(mj_env_name, render_mode="rgb_array")
 
     video_dir = "videos"
     os.makedirs(video_dir, exist_ok=True)
@@ -138,9 +153,14 @@ if __name__ == "__main__":
 
     grid_video_path = os.path.join(
         video_dir,
-        f"{env_name}_grid.mp4",
+        f"{mj_env_name}_grid.mp4",
     )
-    render_episodes_grid_video(interval_episodes, mj_env.unwrapped, grid_video_path)
+    render_episodes_grid_video(
+        interval_episodes, env.unwrapped, grid_video_path
+    )
+    # render_episode(
+    #     episodes[0], env.unwrapped, os.path.join(video_dir, "hopper_test.mp4")
+    # )
     print(
         f"Saved grid video ({args.intervals} rows x {args.episodes_per_interval} cols) to {grid_video_path}"
     )
