@@ -13,18 +13,23 @@ os.environ["MUJOCO_GL"] = "egl"
 def rollout_frames(env, episode, max_steps=1000):
     """Run one rollout, return list of rgb frames."""
     frames = []
-    n_steps = min(episode.actions.shape[0] - 1, max_steps)
+    n_steps = min(episode.actions.shape[0], max_steps)
 
     obs, info = env.reset()
 
     qpos = np.zeros(env.model.nq)
     qpos[1:] = episode.observations[0, :5]
-    qvel = episode.observations[0, 5:]
+    qvel = episode.observations[0, 5:].copy()
     env.set_state(qpos, qvel)
 
-    for i in range(n_steps):
+    for i in range(n_steps - 1):
         # get the action from your policy
-        obs, _, _, _, _ = env.step(episode.actions[i])
+        obs, _, _, _, info = env.step(episode.actions[i])
+        qpos = np.zeros(env.model.nq)
+        qpos[1:] = episode.observations[i + 1, :5]
+        qpos[0] = info["x_position"]
+        qvel = episode.observations[i + 1, 5:]
+        env.set_state(qpos, qvel)
 
         # render and store the RGB frame
         frame = env.render()
