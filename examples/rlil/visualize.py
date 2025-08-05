@@ -10,36 +10,54 @@ import d3rlpy
 os.environ["MUJOCO_GL"] = "egl"
 
 
-def rollout_frames(env, episode, max_steps=1000):
-    """Run one rollout, return list of rgb frames."""
+def rollout_frames_generic(env, episode, missing, max_steps=1000):
+    """Run one rollout for generic MuJoCo environments (e.g., Ant, HalfCheetah)."""
     frames = []
+    n_qpos = env.unwrapped.model.nq
+    n_qvel = env.unwrapped.model.nv
     n_steps = min(episode.actions.shape[0], max_steps)
 
     obs, info = env.reset()
 
-    qpos = np.zeros(env.unwrapped.model.nq)
-    qpos[1:] = episode.observations[0, :5]
-    qvel = episode.observations[0, 5:].copy()
+    n_missing = len(missing)
+    qpos = np.zeros(n_qpos)
+    qpos[n_missing:] = episode.observations[0, : n_qpos - n_missing]
+    qvel = episode.observations[
+        0, n_qpos - n_missing : n_qvel - n_missing + n_qpos
+    ].copy()
     env.unwrapped.set_state(qpos, qvel)
 
     for i in range(n_steps - 1):
-        # get the action from your policy
         obs, reward, _, _, info = env.step(episode.actions[i])
 
-        print(reward - episode.rewards[i])
-
-        qpos = np.zeros(env.unwrapped.model.nq)
-        qpos[1:] = episode.observations[i + 1, :5]
-        qpos[0] = info["x_position"]
-        # print(info)
-        qvel = episode.observations[i + 1, 5:]
+        qpos = np.zeros(n_qpos)
+        qpos[n_missing:] = episode.observations[i + 1, : n_qpos - n_missing]
+        for i, k in enumerate(missing):
+            qpos[i] = info.get(k, qpos[i])
+        qvel = episode.observations[
+            i + 1, n_qpos - n_missing : n_qpos + n_qvel - n_missing
+        ]
         env.unwrapped.set_state(qpos, qvel)
 
-        # render and store the RGB frame
         frame = env.render()
         frames.append(frame)
 
     return frames
+
+
+def rollout_frames(env, episode, max_steps=1000):
+    """Dispatch to environment-specific rollout function."""
+    env_id = env.unwrapped.spec.id.lower()
+    if "hopper" in env_id or "halfcheetah" in env_id or "walker2d" in env_id:
+        return rollout_frames_generic(env, episode, ["x_position"], max_steps)
+    elif "ant" in env_id:
+        return rollout_frames_generic(
+            env, episode, ["x_position", "y_position"], max_steps
+        )
+    else:
+        raise ValueError(
+            f"rollout_frames not implemented for environment: {env_id}"
+        )
 
 
 def render_episode(episode, env, output_path, fps=30, max_frames=None):
