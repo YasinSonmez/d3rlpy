@@ -1,13 +1,44 @@
 import argparse
 import os
 from itertools import zip_longest
+import xml.etree.ElementTree as ET
+import gymnasium as gym
+from importlib import resources
+import tempfile
 
 import imageio
 import numpy as np
 
 import d3rlpy
 
+
 os.environ["MUJOCO_GL"] = "egl"
+
+def ant_xml():
+    base_xml = resources.files("gymnasium.envs.mujoco.assets") / "ant.xml"
+
+    # 2) Parse and recolor the leg subtrees
+    tree = ET.parse(base_xml)
+    root = tree.getroot()
+
+    PURPLE = "0.60 0.30 0.85 1.0"
+
+    def paint_leg(body_name: str, rgba: str):
+        # find the body by name, then recolor all geoms in its subtree
+        for body in root.findall(f".//body[@name='{body_name}']"):
+            for geom in body.findall(".//geom"):
+                geom.set("rgba", rgba)
+
+    LEG_BODIES = ["front_left_leg", "back_leg"]
+
+    for name in LEG_BODIES:
+        paint_leg(name, PURPLE)
+
+    # 3) Save to a temp xml and make the env with it (no mujoco import needed)
+    with tempfile.NamedTemporaryFile(suffix="_ant_purple.xml", delete=False) as tmp:
+        tree.write(tmp.name)
+        custom_xml_path = tmp.name
+    return custom_xml_path
 
 
 def rollout_frames_generic(env, episode, missing, max_steps=1000):
@@ -27,6 +58,7 @@ def rollout_frames_generic(env, episode, missing, max_steps=1000):
     ].copy()
     env.unwrapped.set_state(qpos, qvel)
 
+    print(qpos)
     for i in range(n_steps - 1):
         obs, reward, _, _, info = env.step(episode.actions[i])
 
@@ -147,9 +179,6 @@ if __name__ == "__main__":
     dataset, env = d3rlpy.datasets.get_minari(
         args.env + "/" + args.expert_level, render_mode="rgb_array"
     )
-    # dataset, env = d3rlpy.datasets.get_d4rl("hopper-expert-v0")
-    mj_env_name = env.unwrapped.spec.id
-    # mj_env = gym.make(mj_env_name, render_mode="rgb_array")
 
     video_dir = "videos"
     os.makedirs(video_dir, exist_ok=True)
@@ -178,14 +207,14 @@ if __name__ == "__main__":
         episodes = [dataset.episodes[i] for i in chosen]
         interval_episodes.append(episodes)
 
+    env_name = args.env.replace('/', '_')
     grid_video_path = os.path.join(
         video_dir,
-        f"{mj_env_name}_grid.mp4",
+        f"{env_name}_grid.mp4",
     )
-    render_episodes_grid_video(interval_episodes, env, grid_video_path)
-    # render_episode(
-    #     episodes[0], env.unwrapped, os.path.join(video_dir, "hopper_test.mp4")
-    # )
+    xml = ant_xml()
+    mj_env = gym.make("Ant-v5", xml_file=xml, render_mode="rgb_array")
+    render_episodes_grid_video(interval_episodes, mj_env, grid_video_path)
     print(
         f"Saved grid video ({args.intervals} rows x {args.episodes_per_interval} cols) to {grid_video_path}"
     )
