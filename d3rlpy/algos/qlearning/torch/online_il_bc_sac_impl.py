@@ -105,7 +105,7 @@ class OnlineILBCSACImpl(SACImpl):
         actor_loss_dict.actor_loss.backward()
         self._modules.actor_optim.step()
         
-        self.update_target()
+        self.update_critic_target()
         
         return {
             "critic_loss": float(critic_loss.cpu().detach().numpy()),

@@ -1,43 +1,20 @@
 import dataclasses
 from typing import Any, Optional
-from ...base import DeviceArg, LearnableConfig, register_learnable
+from ...base import DeviceArg, register_learnable
 from ...constants import ActionSpace
-from ...models.builders import create_continuous_q_function, create_deterministic_policy
-from ...models.encoders import EncoderFactory, make_encoder_field
-from ...models.q_functions import QFunctionFactory, make_q_func_field
-from ...optimizers.optimizers import OptimizerFactory, make_optimizer_field
 from ...types import Shape
 from ...dataset import ReplayBufferBase
 from ...torch_utility import convert_to_torch_recursively
-from .base import QLearningAlgoBase
-from .torch.ddpg_impl import DDPGModules
+from .td3_plus_bc import TD3PlusBCConfig, TD3PlusBC
 from .torch.online_il_td3_plus_bc_impl import OnlineILTD3PlusBCImpl
 
 __all__ = ["OnlineILTD3PlusBCConfig", "OnlineILTD3PlusBC"]
 
 
 @dataclasses.dataclass()
-class OnlineILTD3PlusBCConfig(LearnableConfig):
-    observation_scaler: Optional[str] = None
-    action_scaler: Optional[str] = None
-    reward_scaler: Optional[str] = None
-    actor_learning_rate: float = 3e-4
-    critic_learning_rate: float = 3e-4
-    actor_optim_factory: OptimizerFactory = make_optimizer_field()
-    critic_optim_factory: OptimizerFactory = make_optimizer_field()
-    actor_encoder_factory: EncoderFactory = make_encoder_field()
-    critic_encoder_factory: EncoderFactory = make_encoder_field()
-    q_func_factory: QFunctionFactory = make_q_func_field()
-    batch_size: int = 256
-    gamma: float = 0.99
-    tau: float = 0.005
-    n_critics: int = 2
-    target_smoothing_sigma: float = 0.2
-    target_smoothing_clip: float = 0.5
-    alpha: float = 2.5
-    update_actor_interval: int = 2
-    compile_graph: bool = False
-
+class OnlineILTD3PlusBCConfig(TD3PlusBCConfig):
+    """Online IL variant of TD3+BC that uses separate expert buffer for BC term."""
+    
     def create(self, device: DeviceArg = False, enable_ddp: bool = False) -> "OnlineILTD3PlusBC":
         return OnlineILTD3PlusBC(self, device, enable_ddp)
 
@@ -46,7 +23,7 @@ class OnlineILTD3PlusBCConfig(LearnableConfig):
         return "online_il_td3_plus_bc"
 
 
-class OnlineILTD3PlusBC(QLearningAlgoBase[OnlineILTD3PlusBCImpl, OnlineILTD3PlusBCConfig]):
+class OnlineILTD3PlusBC(TD3PlusBC):
     _expert_buffer: Optional[ReplayBufferBase]
 
     def __init__(self, *args, **kwargs):
@@ -57,34 +34,27 @@ class OnlineILTD3PlusBC(QLearningAlgoBase[OnlineILTD3PlusBCImpl, OnlineILTD3Plus
         self._expert_buffer = buffer
 
     def inner_create_impl(self, observation_shape: Shape, action_size: int) -> None:
-        policy = create_deterministic_policy(
-            observation_shape, action_size, self._config.actor_encoder_factory, device=self._device
-        )
-        q_funcs, q_func_forwarder = create_continuous_q_function(
-            observation_shape, action_size, self._config.critic_encoder_factory,
-            self._config.q_func_factory, n_ensembles=self._config.n_critics, device=self._device
-        )
-        targ_q_funcs, targ_q_func_forwarder = create_continuous_q_function(
-            observation_shape, action_size, self._config.critic_encoder_factory,
-            self._config.q_func_factory, n_ensembles=self._config.n_critics, device=self._device
-        )
+        # Use parent's implementation to create modules
+        super().inner_create_impl(observation_shape, action_size)
         
-        actor_optim = self._config.actor_optim_factory.create(policy.named_modules(), lr=self._config.actor_learning_rate)
-        critic_optim = self._config.critic_optim_factory.create(q_funcs.named_modules(), lr=self._config.critic_learning_rate)
-
-        modules = DDPGModules(
-            policy=policy, q_funcs=q_funcs, targ_q_funcs=targ_q_funcs,
-            actor_optim=actor_optim, critic_optim=critic_optim
-        )
-
+        # Replace impl with OnlineIL version
+        assert self._impl is not None
+        modules = self._impl._modules
+        
         self._impl = OnlineILTD3PlusBCImpl(
-            observation_shape=observation_shape, action_size=action_size, modules=modules,
-            q_func_forwarder=q_func_forwarder, targ_q_func_forwarder=targ_q_func_forwarder,
-            gamma=self._config.gamma, tau=self._config.tau,
+            observation_shape=observation_shape,
+            action_size=action_size,
+            modules=modules,
+            q_func_forwarder=self._impl._q_func_forwarder,
+            targ_q_func_forwarder=self._impl._targ_q_func_forwarder,
+            gamma=self._config.gamma,
+            tau=self._config.tau,
             target_smoothing_sigma=self._config.target_smoothing_sigma,
             target_smoothing_clip=self._config.target_smoothing_clip,
-            alpha=self._config.alpha, update_actor_interval=self._config.update_actor_interval,
-            compiled=self._config.compile_graph, device=self._device
+            alpha=self._config.alpha,
+            update_actor_interval=self._config.update_actor_interval,
+            compiled=self._config.compile_graph,
+            device=self._device,
         )
 
     def inner_update(self, batch: Any, grad_step: int) -> dict[str, float]:

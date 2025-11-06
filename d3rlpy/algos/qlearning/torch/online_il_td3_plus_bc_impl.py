@@ -91,7 +91,8 @@ class OnlineILTD3PlusBCImpl(TD3Impl):
             actor_loss_dict.actor_loss.backward()
             self._modules.actor_optim.step()
             
-            self.update_target()
+            self.update_critic_target()
+            self.update_actor_target()
             
             metrics["actor_loss"] = float(actor_loss_dict.actor_loss.cpu().detach().numpy())
             metrics["bc_loss"] = float(actor_loss_dict.bc_loss.cpu().detach().numpy())
