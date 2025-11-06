@@ -12,6 +12,8 @@ from .dqn import *
 from .explorers import *
 from .iql import *
 from .nfq import *
+from .online_il_bc_sac import *
+from .online_il_td3_plus_bc import *
 from .plas import *
 from .prdc import *
 from .random_policy import *
