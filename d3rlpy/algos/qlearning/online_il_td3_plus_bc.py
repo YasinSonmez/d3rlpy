@@ -4,7 +4,8 @@ from ...base import DeviceArg, register_learnable
 from ...constants import ActionSpace
 from ...types import Shape
 from ...dataset import ReplayBufferBase
-from ...torch_utility import convert_to_torch_recursively
+from ...torch_utility import convert_to_torch_recursively, TorchMiniBatch
+from ...dataset import TransitionMiniBatch
 from .td3_plus_bc import TD3PlusBCConfig, TD3PlusBC
 from .torch.online_il_td3_plus_bc_impl import OnlineILTD3PlusBCImpl
 
@@ -57,15 +58,39 @@ class OnlineILTD3PlusBC(TD3PlusBC):
             device=self._device,
         )
 
-    def inner_update(self, batch: Any, grad_step: int) -> dict[str, float]:
+    def update(self, batch: TransitionMiniBatch) -> dict[str, float]:
+        """Override update to use separate expert batch for BC term."""
         assert self._impl
+        
+        # Convert online batch to torch
+        torch_batch = TorchMiniBatch.from_batch(
+            batch=batch,
+            gamma=self._config.gamma,
+            compute_returns_to_go=self.need_returns_to_go,
+            device=self._device,
+            observation_scaler=self._config.observation_scaler,
+            action_scaler=self._config.action_scaler,
+            reward_scaler=self._config.reward_scaler,
+        )
+        
+        # Sample expert batch if available
         if self._expert_buffer and self._expert_buffer.transition_count >= self.batch_size:
             expert_batch_raw = self._expert_buffer.sample_transition_batch(self.batch_size)
-            expert_batch = convert_to_torch_recursively(expert_batch_raw, self._impl.device)
+            expert_batch = TorchMiniBatch.from_batch(
+                batch=expert_batch_raw,
+                gamma=self._config.gamma,
+                compute_returns_to_go=self.need_returns_to_go,
+                device=self._device,
+                observation_scaler=self._config.observation_scaler,
+                action_scaler=self._config.action_scaler,
+                reward_scaler=self._config.reward_scaler,
+            )
         else:
-            expert_batch = batch
+            expert_batch = torch_batch
         
-        return self._impl.inner_update_with_expert(batch, expert_batch, grad_step)
+        metrics = self._impl.inner_update_with_expert(torch_batch, expert_batch, self._grad_step)
+        self._grad_step += 1
+        return metrics
 
 
 register_learnable(OnlineILTD3PlusBCConfig)

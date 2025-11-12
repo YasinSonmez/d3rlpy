@@ -93,8 +93,8 @@ class OnlineILBCSACImpl(SACImpl):
         # Critic update
         self._modules.critic_optim.zero_grad()
         q_tpn = self.compute_target(rl_batch)
-        critic_loss = self.compute_critic_loss(rl_batch, q_tpn)
-        critic_loss.backward()
+        critic_loss_obj = self.compute_critic_loss(rl_batch, q_tpn)
+        critic_loss_obj.critic_loss.backward()
         self._modules.critic_optim.step()
         
         # Actor update with separate batches
@@ -107,9 +107,14 @@ class OnlineILBCSACImpl(SACImpl):
         
         self.update_critic_target()
         
+        # Log BC-specific metrics
         return {
-            "critic_loss": float(critic_loss.cpu().detach().numpy()),
+            "critic_loss": float(critic_loss_obj.critic_loss.cpu().detach().numpy()),
             "actor_loss": float(actor_loss_dict.actor_loss.cpu().detach().numpy()),
+            "sac_policy_loss": float(actor_loss_dict.sac_policy_loss.cpu().detach().numpy()),
+            "bc_log_likelihood": float(actor_loss_dict.bc_log_likelihood.cpu().detach().numpy()),
+            "bc_lambda": self._bc_lambda,
+            "bc_loss_contribution": float((-self._bc_lambda * actor_loss_dict.bc_log_likelihood).cpu().detach().numpy()),
             "temp_loss": float(actor_loss_dict.temp_loss.cpu().detach().numpy()),
             "temp": float(actor_loss_dict.temp.cpu().detach().numpy()),
         }

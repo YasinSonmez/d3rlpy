@@ -76,11 +76,11 @@ class OnlineILTD3PlusBCImpl(TD3Impl):
         # Critic update
         self._modules.critic_optim.zero_grad()
         q_tpn = self.compute_target(rl_batch)
-        critic_loss = self.compute_critic_loss(rl_batch, q_tpn)
-        critic_loss.backward()
+        critic_loss_obj = self.compute_critic_loss(rl_batch, q_tpn)
+        critic_loss_obj.critic_loss.backward()
         self._modules.critic_optim.step()
         
-        metrics = {"critic_loss": float(critic_loss.cpu().detach().numpy())}
+        metrics = {"critic_loss": float(critic_loss_obj.critic_loss.cpu().detach().numpy())}
         
         # Actor update (only if interval met) with separate batches
         if grad_step % self._update_actor_interval == 0:
@@ -96,5 +96,7 @@ class OnlineILTD3PlusBCImpl(TD3Impl):
             
             metrics["actor_loss"] = float(actor_loss_dict.actor_loss.cpu().detach().numpy())
             metrics["bc_loss"] = float(actor_loss_dict.bc_loss.cpu().detach().numpy())
+            metrics["alpha"] = self._alpha
+            metrics["bc_loss_contribution"] = float((self._alpha * actor_loss_dict.bc_loss).cpu().detach().numpy())
         
         return metrics
